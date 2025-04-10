@@ -44,10 +44,11 @@ with -- Список zc_Container_Count + MIContainer
              AND ContainerLinkObject_Account.ContainerId IS NULL
            )
   -- нашли цену - HistoryCost
-, tmp_find AS (select a.GoodsId
+, tmp_find_all AS (select a.GoodsId
                     , ContainerLinkObject.ObjectId         AS InfoMoneyDetailId
                     , coalesce (clo_GoodsKind.ObjectId, 0) AS GoodsKindId
                     , max (HistoryCost.Price)              AS Price
+                    , a.Id                                 AS ContainerId_goods
                from a
                     left join Container as Container_Summ on Container_Summ.ParentId = a.Id
                                                          AND Container_Summ.ObjectId <> zc_Enum_Account_20901()  -- Запасы + Оборотная тара
@@ -68,17 +69,28 @@ with -- Список zc_Container_Count + MIContainer
                     join HistoryCost on HistoryCost.StartDate = '01.03.2025' 
                                     and HistoryCost.ContainerId = Container_Summ.Id
                                     and HistoryCost.Price > 1
-               group by a.GoodsId, ContainerLinkObject.ObjectId , coalesce (clo_GoodsKind.ObjectId, 0) 
+               group by a.GoodsId, ContainerLinkObject.ObjectId , coalesce (clo_GoodsKind.ObjectId, 0), a.Id
          
               )
+  -- нашли цену - HistoryCost
+, tmp_find AS (select DISTINCT
+                      tmp_find_all.GoodsId
+                    , tmp_find_all.GoodsKindId
+                    , tmp_find_all.Price
+               from tmp_find_all
+              )
+
 , res as (
 -- 55386
 -- select count(*)
- select Container_Summ.Id, Container_Summ.ParentId, Object.*, tmp_find.Price
+ select Container_Summ.Id, Container_Summ.ParentId AS ContainerId_goods, Object.*, tmp_find.Price
       , a.GoodsId
       , coalesce (clo_GoodsKind_summ.ObjectId, 0) AS GoodsKindId
       , ContainerLinkObject.ObjectId              AS InfoMoneyDetailId 
  from a
+       -- если хоть одна цена есть, то ОК
+      left join tmp_find_all ON tmp_find_all.ContainerId_goods = a.Id
+
       left join ContainerLinkObject as clo_GoodsKind_count
                                     on clo_GoodsKind_count.ContainerId  = a.Id
                                    and clo_GoodsKind_count.Descid = zc_ContainerLinkObject_GoodsKind() 
@@ -113,14 +125,17 @@ with -- Список zc_Container_Count + MIContainer
       -- если нашли цену по ключу
       join tmp_find on tmp_find.GoodsId           = a.GoodsId
                    and tmp_find.GoodsKindId       = coalesce (clo_GoodsKind_count.ObjectId, 0)
-                   and tmp_find.InfoMoneyDetailId = ContainerLinkObject.ObjectId
+                 --and tmp_find.InfoMoneyDetailId = ContainerLinkObject.ObjectId
 
 where HistoryCost.ContainerId IS NULL
 -- and ContainerLinkObject.ObjectId = 8906
   AND COALESCE (clo_GoodsKind_count.ObjectId, 0) = COALESCE (clo_GoodsKind_summ.ObjectId, 0)
+  -- если вообще не нашли цену для ContainerId_goods
+  AND tmp_find_all.ContainerId_goods IS NULL
+
  limit 200
 )
- select * from res order by ParentId
+ select * from res order by ContainerId_goods
 -- select count(*)  from res 
 -- 33287
 -- 33288
@@ -190,7 +205,7 @@ where _tmpMaster.GoodsId = 7917624
 */
 
 
-
+/*
 
 select * 
 from Container 
@@ -242,5 +257,5 @@ SELECT 3, * FROM historycost_2024_12_2 WHERE '01.03.2025' = StartDate and Contai
 order by 1
 
 select *, xmin, CURRENT_TIMESTAMP from pg_replication_slots
-
 ;
+*/
